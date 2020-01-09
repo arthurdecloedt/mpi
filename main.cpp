@@ -220,9 +220,7 @@ int main(int argc, char *argv[]) {
         std::string name = setUpProgram(rows, cols, iteration_gap, iterations, processors);
         name.copy(options.program_name, name.size());
         options.program_name[name.size()] = '\0';
-        std::cout << rank << options.program_name<< std::endl;
-
-
+        std::cout << rank << ": " << options.program_name<< std::endl;
 
 
 //        int processes = 1, processID = 0;
@@ -237,7 +235,6 @@ int main(int argc, char *argv[]) {
 
     MPI_Type_free(&GOL_options);
     std::string name = options.program_name;
-    std::cout << rank << name<< std::endl;
 
     int p_up ,p_down,p_right,p_left;
     int dims[2]={options.pnI,options.pnJ};
