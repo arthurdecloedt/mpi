@@ -66,25 +66,10 @@ void distr_borders(bool **board, neighbours nbr, MPI_Comm communicator, distrOpt
 void initializeBoard(bool **board, distrOpt options,int rank) {
     int deadCellMultiplier = 2;
     srand(rank);
-    if (rank==100) {
     for (int i = 1; i < options.lIsz+1; i++) {
         for (int j = 1; j < options.lJsz+1; j++) {
             board[i][j] = rand() % (deadCellMultiplier + 1) == 0;
         }
-    }} else{
-        for (int i = 1; i < options.lIsz+1; i++) {
-            for (int j = 1; j < options.lJsz+1; j++) {
-                board[i][j] = 0;
-            }
-        }
-
-    }
-    if (rank==0){
-        board[options.lIsz][options.lJsz] = 1;
-        board[options.lIsz-1][options.lJsz] = 1;
-    }
-    if (rank==2){
-        board[1][options.lJsz] = 1;
     }
 
 }
