@@ -109,7 +109,7 @@ void writeBoardToFile(bool **board, size_t firstRow, size_t lastRow, size_t firs
                       size_t lastCol, const std::string &fileName, int iteration, uint processID, distrOpt options) {
     //Open file
 
-    std::ofstream outputFile(fileName + "_" + std::to_string(iteration) + "_" + std::to_string(processID) + ".gol");
+    std::ofstream outputFile("/data/leuven/332/vsc33219/gol/" + fileName + "_" + std::to_string(iteration) + "_" + std::to_string(processID) + ".gol");
     //Write metadata
     outputFile << std::to_string(firstRow) << " " << std::to_string(lastRow) << std::endl;
     outputFile << std::to_string(firstCol) << " " << std::to_string(lastCol) << std::endl;
