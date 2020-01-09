@@ -20,6 +20,8 @@ struct distrOpt {
     int save_file;          /* save to file?*/
     int lIsz;
     int lJsz;
+    char program_name[100];
+
 };
 struct neighbours {
     int left;
@@ -216,6 +218,11 @@ int main(int argc, char *argv[]) {
                 0,           /* save to file?*/
                 cols / mesh_dim, rows / mesh_dim
         };
+        std::string name = setUpProgram(rows, cols, iteration_gap, iterations, processors);
+        name.copy(options.program_name, name.size());
+        options.program_name[name.size()] = '\0';
+
+
 
 //        int processes = 1, processID = 0;
 //        size_t firstRow = 0, lastRow = rows - 1, firstCol = 0, lastCol = cols - 1;
@@ -228,11 +235,8 @@ int main(int argc, char *argv[]) {
     MPI_Bcast(&options, 1, GOL_options, 0, MPI_COMM_WORLD);
 
     MPI_Type_free(&GOL_options);
-    std::string name = setUpProgram(options.gszJ, options.gszJ, options.file_jump, options.nIter, processors);
-
-
-
-
+    std::string name = options.program_name;
+    
     int p_up ,p_down,p_right,p_left;
     int dims[2]={options.pnI,options.pnJ};
 
