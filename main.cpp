@@ -170,12 +170,11 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &processors);
 
     MPI_Datatype GOL_options;
-    MPI_Aint displ[1] = {0};
+    MPI_Aint displ[2] = {0, 10 * sizeof(int)};
 
-    int lengths[1] = {10};
-    MPI_Datatype types[1] = {MPI_INT};
-
-    MPI_Type_create_struct(1, lengths, displ, types, &GOL_options);
+    int lengths[2] = {10, 100};
+    MPI_Datatype types[2] = {MPI_INT, MPI_CHAR};
+    MPI_Type_create_struct(2, lengths, displ, types, &GOL_options);
     MPI_Type_commit(&GOL_options);
 
     distrOpt options;
@@ -221,6 +220,8 @@ int main(int argc, char *argv[]) {
         std::string name = setUpProgram(rows, cols, iteration_gap, iterations, processors);
         name.copy(options.program_name, name.size());
         options.program_name[name.size()] = '\0';
+        std::cout << rank << options.program_name<< std::endl;
+
 
 
 
@@ -231,12 +232,13 @@ int main(int argc, char *argv[]) {
         std::cout << rank << "Broadcasting options" << std::endl;
 
     }
-
     MPI_Bcast(&options, 1, GOL_options, 0, MPI_COMM_WORLD);
+
 
     MPI_Type_free(&GOL_options);
     std::string name = options.program_name;
-    
+    std::cout << rank << name<< std::endl;
+
     int p_up ,p_down,p_right,p_left;
     int dims[2]={options.pnI,options.pnJ};
 
