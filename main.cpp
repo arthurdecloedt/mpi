@@ -65,53 +65,50 @@ void distr_borders(bool **board, neighbours nbr, MPI_Comm communicator, distrOpt
 }
 
 
-void initializeBoard(bool **board, distrOpt options,int rank) {
+void initializeBoard(bool **board, distrOpt options, int rank) {
     int deadCellMultiplier = 2;
     srand(rank);
-    for (int i = 1; i < options.lIsz+1; i++) {
-        for (int j = 1; j < options.lJsz+1; j++) {
+    for (int i = 1; i < options.lIsz + 1; i++) {
+        for (int j = 1; j < options.lJsz + 1; j++) {
             board[i][j] = rand() % (deadCellMultiplier + 1) == 0;
         }
     }
 
 }
 
-void updateBoard(bool **board, distrOpt options) {
+static bool inline next(bool **board, size_t i, size_t j) {
+    int sum;
+
+    sum = board[i - 1][j - 1] + board[i - 1][j] +
+          board[i - 1][j + 1] + board[i][j - 1] +
+          board[i][j + 1] + board[i + 1][j - 1] +
+          board[i + 1][j] + board[i + 1][j + 1];
+
+    if (sum < 2 || sum > 3) return false;
+    else if (sum == 3) return true;
+    else return board[i][j];
+}
+
+
+void updateBoard(bool **board, bool **nboard, distrOpt options) {
     const size_t rows = options.lIsz;
     const size_t cols = options.lJsz;
-    std::vector<std::vector<int>> liveNeighbors(rows +2, std::vector<int>(cols +2, 0));
 
-    //Count live neighbours
-    for (size_t i = 0; i <= rows+1; ++i) {
-        for (size_t j = 0; j <= cols+1; ++j) {
-            if (board[i][j]) {
-                for (int di = -1; di <= 1; ++di) {
-                    for (int dj = -1; dj <= 1; ++dj) {
-                        //Periodic boundary conditions
-                        //liveNeighbors[(i + di + rows) % rows][(j + dj + cols) % cols]++;
-                        if(i + di>=0 && i + di<=cols+1 && j + dj >=0 &&  j + dj <=rows+1){
-                            liveNeighbors[i + di][j + dj]++;
-                        }
-                    }
-                }
-                liveNeighbors[i][j]--; //Correction so that a cell does not consider itself as a live neighbor
-            }
-        }
-    }
-
-    //Update board
-    for (size_t i = 1; i < rows+1; ++i) {
-        for (size_t j = 1; j < cols+1; ++j) {
-            board[i][j] = ((liveNeighbors[i][j] == 3) || (board[i][j] && liveNeighbors[i][j] == 2));
+    //Update
+    for (size_t i = 1; i <= rows; ++i) {
+        for (size_t j = 1; j <= cols; ++j) {
+            nboard[i][j] = next(board, i, j);
         }
     }
 }
+
 
 void writeBoardToFile(bool **board, size_t firstRow, size_t lastRow, size_t firstCol,
                       size_t lastCol, const std::string &fileName, int iteration, uint processID, distrOpt options) {
     //Open file
 
-    std::ofstream outputFile("/data/leuven/332/vsc33219/gol/" + fileName + "_" + std::to_string(iteration) + "_" + std::to_string(processID) + ".gol");
+    std::ofstream outputFile("/data/leuven/332/vsc33219/gol/" + fileName + "_" + std::to_string(iteration) + "_" +
+                             std::to_string(processID) + ".gol");
     //Write metadata
     outputFile << std::to_string(firstRow) << " " << std::to_string(lastRow) << std::endl;
     outputFile << std::to_string(firstCol) << " " << std::to_string(lastCol) << std::endl;
@@ -169,10 +166,10 @@ int main(int argc, char *argv[]) {
     distrOpt options;
     //***C++11 Style:***
 
-
+    int first = 0;
 
     if (rank == 0) {
-        if (argc != 5  && argc !=6) {
+        if (argc != 5 && argc != 6 && argc != 7) {
             std::cout
                     << "This program should be called with four arguments! \nThese should be, the total number of rows; the total number of columns; the gap between saved iterations and the total number of iterations, in that order."
                     << std::endl;
@@ -194,7 +191,7 @@ int main(int argc, char *argv[]) {
         }
 
 
-            float z = sqrt(processors);
+        float z = sqrt(processors);
         if (rows <= 0 || rows != cols || z != floor(z) || rows % (int) z != 0 || rows / (int) z < 4) {
             std::cout << "Illegal board size parameter combination!" << std::endl;
             MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
@@ -212,14 +209,18 @@ int main(int argc, char *argv[]) {
                 cols / mesh_dim, rows / mesh_dim
         };
         std::string name = setUpProgram(rows, cols, iteration_gap, iterations, processors);
-        try {
+        if (argc > 5) {
             time_file = argv[5];
-        }  catch(std::exception const &exc2 ){
-            time_file=name;
+        } else {
+            time_file = name;
+        }
+        if (argc > 6) {
+            first = atoi(argv[6]);
+
         }
         name.copy(options.program_name, name.size());
         options.program_name[name.size()] = '\0';
-        std::cout << rank << ": " << options.program_name<< std::endl;
+        std::cout << rank << ": " << options.program_name << std::endl;
 
 
 //        int processes = 1, processID = 0;
@@ -235,26 +236,26 @@ int main(int argc, char *argv[]) {
     MPI_Type_free(&GOL_options);
     std::string name = options.program_name;
 
-    int p_up ,p_down,p_right,p_left;
-    int dims[2]={options.pnI,options.pnJ};
+    int p_up, p_down, p_right, p_left;
+    int dims[2] = {options.pnI, options.pnJ};
 
     MPI_Dims_create(processors, 2, dims);
-    int periods[2]={0,0};
+    int periods[2] = {0, 0};
 
     MPI_Comm comm;
-    MPI_Cart_create( MPI_COMM_WORLD, 2, dims, periods, 1, &comm );
-    MPI_Cart_shift(comm,0,1,&p_up,&p_down);
-    MPI_Cart_shift(comm,1,1,&p_left,&p_right);
+    MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, 1, &comm);
+    MPI_Cart_shift(comm, 0, 1, &p_up, &p_down);
+    MPI_Cart_shift(comm, 1, 1, &p_left, &p_right);
     int coor[2];
-    MPI_Cart_coords(comm, rank, 2, coor );
+    MPI_Cart_coords(comm, rank, 2, coor);
     int pcoory = coor[1];
     int pcoorx = coor[0];
 
     neighbours nbr = {p_left, p_right, p_down, p_up};
-    int left_c = pcoory * options.lIsz ;
-    int right_c = (pcoory + 1) * options.lIsz -1;
+    int left_c = pcoory * options.lIsz;
+    int right_c = (pcoory + 1) * options.lIsz - 1;
     int down_c = pcoorx * options.lJsz;
-    int up_c = (pcoorx + 1) * options.lJsz -1;
+    int up_c = (pcoorx + 1) * options.lJsz - 1;
 
     int lIsz = (options.gszI) / options.pnI;
     int lJsz = (options.gszJ) / options.pnJ;
@@ -262,14 +263,19 @@ int main(int argc, char *argv[]) {
     std::cout << rank << ": Neighbours determined" << p_left << " , " << p_right << " , " << p_down << " , " << p_up
               << std::endl;
     //Build board
-    bool **board;
+    bool **board, **board2, **tmp, *board_data, *board_data2;
     board = (bool **) malloc((lIsz + 2) * sizeof(bool *));
-    board[0] = (bool *) malloc((lIsz + 2) * (lJsz + 2) * sizeof(bool));
-    for (int i = 1; i < lIsz + 2; i++) {
-        board[i] = board[i - 1] + lJsz + 2;
+    board2 = (bool **) malloc((lIsz + 2) * sizeof(bool *));
+    board_data = (bool *) malloc((lIsz + 2) * (lJsz + 2) * sizeof(bool));
+    board_data2 = (bool *) malloc((lIsz + 2) * (lJsz + 2) * sizeof(bool));
+
+
+    for (int i = 0; i < lIsz + 2; i++) {
+        board[i] = &(board_data[i * (lJsz + 2)]);
+        board2[i] = &(board_data2[i * (lJsz + 2)]);
     }
 
-    initializeBoard(board, options,rank);
+    initializeBoard(board, options, rank);
     std::cout << rank << ": succeeded in initializing board" << std::endl;
     MPI_Barrier(MPI_COMM_WORLD);
     std::cout << rank << ": Board initialized" << std::endl;
@@ -283,8 +289,11 @@ int main(int argc, char *argv[]) {
     std::chrono::steady_clock::time_point check1 = std::chrono::steady_clock::now();
 
     for (int a = 1; a <= options.nIter; ++a) {
-        updateBoard(board, options);
+        updateBoard(board, board2, options);
 
+        tmp = board;
+        board = board2;
+        board2 = tmp;
         MPI_Barrier(MPI_COMM_WORLD);
 
         distr_borders(board, nbr, comm, options);
@@ -294,16 +303,18 @@ int main(int argc, char *argv[]) {
         }
 
     }
-    free( board[0] );
-    free( board );
+    free(board_data);
+    free(board);
+    free(board_data2);
+    free(board2);
     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
     MPI_Barrier(MPI_COMM_WORLD);
-    long local = std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
-    long local_nosetup = std::chrono::duration_cast<std::chrono::microseconds>(end - check1).count();
-    long local_setup = std::chrono::duration_cast<std::chrono::microseconds>(check1 - begin).count();
-    long global_sum;
-    long global_sum_nosetup;
-    long global_sum_setup;
+    long int local = std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
+    long int local_nosetup = std::chrono::duration_cast<std::chrono::microseconds>(end - check1).count();
+    long int local_setup = std::chrono::duration_cast<std::chrono::microseconds>(check1 - begin).count();
+    long int global_sum;
+    long int global_sum_nosetup;
+    long int global_sum_setup;
 
     MPI_Reduce(&local, &global_sum, 1, MPI_LONG, MPI_SUM, 0,
                MPI_COMM_WORLD);
@@ -312,36 +323,45 @@ int main(int argc, char *argv[]) {
     MPI_Reduce(&local_setup, &global_sum_setup, 1, MPI_LONG, MPI_SUM, 0,
                MPI_COMM_WORLD);
 
-    if (rank==0){
-        long ttl_single = local;
-        long ttl_sum = global_sum;
-        double avg = (double)global_sum/processors;
-        double avg_nosetup = (double)global_sum_nosetup/processors;
-        double avgsetup = (double)global_sum_setup/processors;
+    if (rank == 0) {
+        long int ttl_single = local;
+        long int ttl_sum = global_sum;
+        long int avg = global_sum / processors;
+        long int avg_nosetup = global_sum_nosetup / processors;
+        long int avgsetup = global_sum_setup / processors;
 
         std::ofstream outfile;
-        outfile.open(time_file, std::ios_base::app); // append instead of overwrite
-        outfile<< "Timing results: milliseconds " <<std::endl;
+        outfile.open(time_file + "_detailed.out", std::ios_base::app); // append instead of overwrite
+        outfile << "Timing results: milliseconds " << std::endl;
 
-        outfile<< "size:" << options.gszI << " by " << options.gszI <<std::endl;
+        outfile << "size:" << options.gszI << " by " << options.gszJ << std::endl;
 
-        outfile << processors << " Processors" <<std::endl;
-        outfile << "Full (with setup) "<< std::endl;
+        outfile << processors << " Processors" << std::endl;
+        outfile << "Full (with setup) " << std::endl;
         outfile << "Single time (rank 0): " << ttl_single << "ms" << std::endl;
         outfile << "Avg single time: " << avg << "ms" << std::endl;
         outfile << "Summed time: " << ttl_sum << "ms" << std::endl;
-        outfile << "Without setup "<< std::endl;
+        outfile << "Without setup " << std::endl;
         outfile << "Single time (rank 0): " << local_nosetup << "ms" << std::endl;
         outfile << "Avg single time: " << avg_nosetup << "ms" << std::endl;
         outfile << "Summed time: " << global_sum_nosetup << "ms" << std::endl;
-        outfile << "Setup "<< std::endl;
+        outfile << "Setup " << std::endl;
         outfile << "Single time (rank 0): " << local_setup << "ms" << std::endl;
         outfile << "Avg single time: " << avgsetup << "ms" << std::endl;
         outfile << "Summed time: " << global_sum_setup << "ms" << std::endl;
-        outfile<< "___________________________________________________ " <<std::endl<<std::endl;
+        outfile << "___________________________________________________ " << std::endl << std::endl;
         outfile.close();
-
-
+        std::ofstream outfile2;
+        outfile2.open(time_file + "_compact.csv", std::ios_base::app); // append instead of overwrite
+        if (first != 0) {
+            outfile2 << "X" << "," << "Y" << "," << "#P" << "," << "full single" << "," << "full avg" << ","
+                     << "full sum" << "," << "nosetup single" << "," << "nosetup avg" << "," << "nosetup sum" << ","
+                     << "setup single " << "," << "setup avg " << "," << "setup sum " << std::endl;
+        }
+        outfile2 << options.gszI << "," << options.gszJ << "," << processors << "," << ttl_single << "," << avg << ","
+                 << ttl_sum << "," << local_nosetup << "," << avg_nosetup << "," << global_sum_nosetup << ","
+                 << local_setup << "," << avgsetup << "," << global_sum_setup << std::endl;
+        outfile2.close();
     }
     std::cout << rank << ": all succeeded" << std::endl;
     MPI_Finalize();
