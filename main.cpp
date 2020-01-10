@@ -8,6 +8,8 @@
 #include <cmath>
 #include <string>
 #include <thread>
+#include <chrono>
+
 
 int const globalBufferLength = 50;
 
@@ -148,6 +150,8 @@ std::string setUpProgram(size_t rows, size_t cols, int iteration_gap, int iterat
 }
 
 int main(int argc, char *argv[]) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
     int rank, processors;
     MPI_Init(&argc, &argv);
@@ -163,6 +167,8 @@ int main(int argc, char *argv[]) {
     MPI_Type_commit(&GOL_options);
 
     distrOpt options;
+    //***C++11 Style:***
+
 
 
     if (rank == 0) {
@@ -245,41 +251,28 @@ int main(int argc, char *argv[]) {
     int lIsz = (options.gszI) / options.pnI;
     int lJsz = (options.gszJ) / options.pnJ;
 
-
-    std::cout << rank << ": Coords determined" << left_c << " , " << right_c << " , " << down_c << " , " << up_c
-              << std::endl;
     std::cout << rank << ": Neighbours determined" << p_left << " , " << p_right << " , " << p_down << " , " << p_up
               << std::endl;
     //Build board
     bool **board;
     board = (bool **) malloc((lIsz + 2) * sizeof(bool *));
     board[0] = (bool *) malloc((lIsz + 2) * (lJsz + 2) * sizeof(bool));
-    std::cout << rank << ": Setting Borders" << std::endl;
-    MPI_Barrier(MPI_COMM_WORLD);
     for (int i = 1; i < lIsz + 2; i++) {
         board[i] = board[i - 1] + lJsz + 2;
     }
-    MPI_Barrier(MPI_COMM_WORLD);
-    if (rank == 0) {std::cout << rank << ": succeeded in setting pointers board" << std::endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
+
     initializeBoard(board, options,rank);
     std::cout << rank << ": succeeded in initializing board" << std::endl;
     MPI_Barrier(MPI_COMM_WORLD);
     std::cout << rank << ": Board initialized" << std::endl;
     distr_borders(board, nbr, comm, options);
-    MPI_Barrier(MPI_COMM_WORLD);
-    std::cout << rank << ": Borders distributed" << std::endl;
     //Do iteration
-
-
-    writeBoardToFile(board, down_c, up_c, left_c, right_c, name, 0, rank, options);
+//
+//    writeBoardToFile(board, down_c, up_c, left_c, right_c, name, 0, rank, options);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    std::cout << rank << ": init File written" << std::endl;
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    std::chrono::steady_clock::time_point check1 = std::chrono::steady_clock::now();
 
     for (int a = 1; a <= options.nIter; ++a) {
         updateBoard(board, options);
@@ -287,17 +280,55 @@ int main(int argc, char *argv[]) {
         MPI_Barrier(MPI_COMM_WORLD);
 
         distr_borders(board, nbr, comm, options);
-        if (options.save_file||a % options.file_jump == 0) {
+        if (options.save_file && a % options.file_jump == 0) {
             writeBoardToFile(board, down_c, up_c, left_c, right_c, name, a, rank, options);
 //            writeBoardToFile(board, left_c, right_c, down_c, up_c, name, a, rank, options);
         }
-            MPI_Barrier(MPI_COMM_WORLD);
 
     }
-    MPI_Barrier(MPI_COMM_WORLD);
     free( board[0] );
     free( board );
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
     MPI_Barrier(MPI_COMM_WORLD);
+    long local = std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
+    long local_nosetup = std::chrono::duration_cast<std::chrono::microseconds>(end - check1).count();
+    long local_setup = std::chrono::duration_cast<std::chrono::microseconds>(check1 - begin).count();
+    long global_sum;
+    long global_sum_nosetup;
+    long global_sum_setup;
+
+    MPI_Reduce(&local, &global_sum, 1, MPI_LONG, MPI_SUM, 0,
+               MPI_COMM_WORLD);
+    MPI_Reduce(&local_nosetup, &global_sum_nosetup, 1, MPI_LONG, MPI_SUM, 0,
+               MPI_COMM_WORLD);
+    MPI_Reduce(&local_setup, &global_sum_setup, 1, MPI_LONG, MPI_SUM, 0,
+               MPI_COMM_WORLD);
+
+    if (rank==0){
+        long ttl_single = local;
+        long ttl_sum = global_sum;
+        double avg = (double)global_sum/processors;
+        double avg_nosetup = (double)global_sum_nosetup/processors;
+        double avgsetup = (double)global_sum_setup/processors;
+
+        std::ofstream outfile;
+        outfile.open(name+".gol", std::ios_base::app); // append instead of overwrite
+        outfile<< "Timing results: milliseconds " <<std::endl;
+        outfile << "Full (with setup) "<< std::endl;
+        outfile << "Single time (rank 0): " << ttl_single << "ms" << std::endl;
+        outfile << "Avg single time: " << avg << "ms" << std::endl;
+        outfile << "Summed time: " << ttl_sum << "ms" << std::endl;
+        outfile << "Without setup "<< std::endl;
+        outfile << "Single time (rank 0): " << local_nosetup << "ms" << std::endl;
+        outfile << "Avg single time: " << avg_nosetup << "ms" << std::endl;
+        outfile << "Summed time: " << global_sum_nosetup << "ms" << std::endl;
+        outfile << "Setup "<< std::endl;
+        outfile << "Single time (rank 0): " << local_setup << "ms" << std::endl;
+        outfile << "Avg single time: " << avgsetup << "ms" << std::endl;
+        outfile << "Summed time: " << global_sum_setup << "ms" << std::endl;
+        outfile.close();
+
+    }
     std::cout << rank << ": all succeeded" << std::endl;
     MPI_Finalize();
     return 0;
