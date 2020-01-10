@@ -152,7 +152,7 @@ std::string setUpProgram(size_t rows, size_t cols, int iteration_gap, int iterat
 int main(int argc, char *argv[]) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-
+    std::string time_file;
     int rank, processors;
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -172,7 +172,7 @@ int main(int argc, char *argv[]) {
 
 
     if (rank == 0) {
-        if (argc != 5) {
+        if (argc != 5  && argc !=6) {
             std::cout
                     << "This program should be called with four arguments! \nThese should be, the total number of rows; the total number of columns; the gap between saved iterations and the total number of iterations, in that order."
                     << std::endl;
@@ -186,12 +186,15 @@ int main(int argc, char *argv[]) {
             cols = atoi(argv[2]);
             iteration_gap = atoi(argv[3]);
             iterations = atoi(argv[4]);
+
         } catch (std::exception const &exc) {
             std::cout << "One or more program arguments are invalid!" << std::endl;
             MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
             return 1;
         }
-        float z = sqrt(processors);
+
+
+            float z = sqrt(processors);
         if (rows <= 0 || rows != cols || z != floor(z) || rows % (int) z != 0 || rows / (int) z < 4) {
             std::cout << "Illegal board size parameter combination!" << std::endl;
             MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
@@ -209,6 +212,11 @@ int main(int argc, char *argv[]) {
                 cols / mesh_dim, rows / mesh_dim
         };
         std::string name = setUpProgram(rows, cols, iteration_gap, iterations, processors);
+        try {
+            time_file = argv[5];
+        }  catch(std::exception const &exc2 ){
+            time_file=name;
+        }
         name.copy(options.program_name, name.size());
         options.program_name[name.size()] = '\0';
         std::cout << rank << ": " << options.program_name<< std::endl;
@@ -312,8 +320,12 @@ int main(int argc, char *argv[]) {
         double avgsetup = (double)global_sum_setup/processors;
 
         std::ofstream outfile;
-        outfile.open(name+".gol", std::ios_base::app); // append instead of overwrite
+        outfile.open(time_file, std::ios_base::app); // append instead of overwrite
         outfile<< "Timing results: milliseconds " <<std::endl;
+
+        outfile<< "size:" << options.gszI << " by " << options.gszI <<std::endl;
+
+        outfile << processors << " Processors" <<std::endl;
         outfile << "Full (with setup) "<< std::endl;
         outfile << "Single time (rank 0): " << ttl_single << "ms" << std::endl;
         outfile << "Avg single time: " << avg << "ms" << std::endl;
@@ -326,7 +338,9 @@ int main(int argc, char *argv[]) {
         outfile << "Single time (rank 0): " << local_setup << "ms" << std::endl;
         outfile << "Avg single time: " << avgsetup << "ms" << std::endl;
         outfile << "Summed time: " << global_sum_setup << "ms" << std::endl;
+        outfile<< "___________________________________________________ " <<std::endl<<std::endl;
         outfile.close();
+
 
     }
     std::cout << rank << ": all succeeded" << std::endl;
