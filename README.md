@@ -5,4 +5,5 @@ Written quick and very dirty in preparation of exam, designed to run on Thinking
 
 based on serial code by Emil Loevbak,
 python script provided by course 
+
 grade for course = 17/20
